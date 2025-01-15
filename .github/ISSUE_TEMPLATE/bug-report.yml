@@ -26,10 +26,10 @@ body:
      label: Expected behavior
      description: What did you expect to happen?
  - type: textarea
-   id: screenshot
+   id: screenshot-recording
    attributes:
-     label: Screenshots
-     description: Please include screenshots if applicable!
+     label: Screenshots/Recordings
+     description: Please include screenshots/recordings if applicable!
  - type: textarea
    id: reproduce
    attributes:
@@ -48,11 +48,24 @@ body:
      label: Error messages or log output
      description: Please copy and paste any relevant error messages or log output. This will be automatically formatted, so there is no need for backticks.
      render: shell
+ - type: dropdown
+   id: stage
+   attributes:
+     label: Detection stage
+     description: At what stage was the bug detected?
+     options:
+       - In production (default)
+       - In beta
+       - During release testing
+       - On the development branch
+   validations:
+     required: true
  - type: input
    id: version
    attributes:
      label: Version
      description: What version of MetaMask are you running? You can find the version in "Settings" > "About"
+     placeholder: "7.1.0"
    validations:
      required: true
  - type: dropdown
@@ -103,6 +116,8 @@ body:
        - Keystone
        - GridPlus Lattice1
        - AirGap Vault
+       - imToken
+       - OneKey
        - Other (please elaborate in the "Additional Context" section)
  - type: textarea
    id: additional

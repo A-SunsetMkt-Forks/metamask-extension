@@ -12,6 +12,16 @@ import {
   getCurrentChainId,
   getShouldShowSeedPhraseReminder,
   isCurrentProviderCustom,
+  ///: BEGIN:ONLY_INCLUDE_IF(keyring-snaps)
+  getUnapprovedConfirmations,
+  ///: END:ONLY_INCLUDE_IF
+  getShowExtensionInFullSizeView,
+  getSelectedAccount,
+  getSwitchedNetworkDetails,
+  getNetworkToAutomaticallySwitchTo,
+  getNumberOfAllUnapprovedTransactionsAndMessages,
+  getUseRequestQueue,
+  getCurrentNetwork,
 } from '../../selectors';
 import {
   lockMetamask,
@@ -19,15 +29,18 @@ import {
   hideIpfsModal,
   setCurrentCurrency,
   setLastActiveTime,
-  setMouseUserState,
   toggleAccountMenu,
   toggleNetworkMenu,
   hideImportTokensModal,
-  ///: BEGIN:ONLY_INCLUDE_IN(keyring-snaps)
+  hideDeprecatedNetworkModal,
+  addPermittedAccount,
+  automaticallySwitchNetwork,
+  clearSwitchedNetworkDetails,
+  ///: BEGIN:ONLY_INCLUDE_IF(keyring-snaps)
   hideKeyringRemovalResultModal,
-  ///: END:ONLY_INCLUDE_IN
+  ///: END:ONLY_INCLUDE_IF
+  setEditedNetwork,
 } from '../../store/actions';
-import { hideSelectActionModal } from '../../components/multichain/app-footer/app-footer-actions';
 import { pageChanged } from '../../ducks/history/history';
 import { prepareToLeaveSwaps } from '../../ducks/swaps/swaps';
 import { getSendStage } from '../../ducks/send';
@@ -36,26 +49,39 @@ import {
   getProviderConfig,
 } from '../../ducks/metamask/metamask';
 import { DEFAULT_AUTO_LOCK_TIME_LIMIT } from '../../../shared/constants/preferences';
+import { selectSwitchedNetworkNeverShowMessage } from '../../components/app/toast-master/selectors';
 import Routes from './routes.component';
 
 function mapStateToProps(state) {
-  const { appState } = state;
+  const { activeTab, appState } = state;
   const { alertOpen, alertMessage, isLoading, loadingMessage } = appState;
-  const { autoLockTimeLimit = DEFAULT_AUTO_LOCK_TIME_LIMIT } =
+  const { autoLockTimeLimit = DEFAULT_AUTO_LOCK_TIME_LIMIT, privacyMode } =
     getPreferences(state);
   const { completedOnboarding } = state.metamask;
+
+  // If there is more than one connected account to activeTabOrigin,
+  // *BUT* the current account is not one of them, show the banner
+  const account = getSelectedAccount(state);
+  const activeTabOrigin = activeTab?.origin;
+  const currentNetwork = getCurrentNetwork(state);
+
+  const networkToAutomaticallySwitchTo =
+    getNetworkToAutomaticallySwitchTo(state);
+  const switchedNetworkDetails = getSwitchedNetworkDetails(state);
 
   return {
     alertOpen,
     alertMessage,
+    account,
+    activeTabOrigin,
     textDirection: state.metamask.textDirection,
     isLoading,
     loadingMessage,
     isUnlocked: getIsUnlocked(state),
     isNetworkLoading: isNetworkLoading(state),
     currentCurrency: state.metamask.currentCurrency,
-    isMouseUser: state.appState.isMouseUser,
     autoLockTimeLimit,
+    privacyMode,
     browserEnvironmentOs: state.metamask.browserEnvironment?.os,
     browserEnvironmentContainter: state.metamask.browserEnvironment?.browser,
     providerId: getNetworkIdentifier(state),
@@ -65,6 +91,7 @@ function mapStateToProps(state) {
     isNetworkUsed: getIsNetworkUsed(state),
     allAccountsOnNetworkAreEmpty: getAllAccountsOnNetworkAreEmpty(state),
     isTestNet: getIsTestnet(state),
+    showExtensionInFullSizeView: getShowExtensionInFullSizeView(state),
     currentChainId: getCurrentChainId(state),
     shouldShowSeedPhraseReminder: getShouldShowSeedPhraseReminder(state),
     forgottenPassword: state.metamask.forgottenPassword,
@@ -73,14 +100,25 @@ function mapStateToProps(state) {
     isAccountMenuOpen: state.metamask.isAccountMenuOpen,
     isNetworkMenuOpen: state.metamask.isNetworkMenuOpen,
     isImportTokensModalOpen: state.appState.importTokensModalOpen,
+    isBasicConfigurationModalOpen: state.appState.showBasicFunctionalityModal,
+    isDeprecatedNetworkModalOpen: state.appState.deprecatedNetworkModalOpen,
     accountDetailsAddress: state.appState.accountDetailsAddress,
     isImportNftsModalOpen: state.appState.importNftsModal.open,
     isIpfsModalOpen: state.appState.showIpfsModalOpen,
-    isSelectActionModalOpen: state.appState.showSelectActionModal,
-    ///: BEGIN:ONLY_INCLUDE_IN(keyring-snaps)
+    switchedNetworkDetails,
+    networkToAutomaticallySwitchTo,
+    currentNetwork,
+    totalUnapprovedConfirmationCount:
+      getNumberOfAllUnapprovedTransactionsAndMessages(state),
+    switchedNetworkNeverShowMessage:
+      selectSwitchedNetworkNeverShowMessage(state),
+    currentExtensionPopupId: state.metamask.currentExtensionPopupId,
+    useRequestQueue: getUseRequestQueue(state),
+    ///: BEGIN:ONLY_INCLUDE_IF(keyring-snaps)
     isShowKeyringSnapRemovalResultModal:
       state.appState.showKeyringRemovalSnapModal,
-    ///: END:ONLY_INCLUDE_IN
+    pendingConfirmations: getUnapprovedConfirmations(state),
+    ///: END:ONLY_INCLUDE_IF
   };
 }
 
@@ -88,8 +126,6 @@ function mapDispatchToProps(dispatch) {
   return {
     lockMetaMask: () => dispatch(lockMetamask(false)),
     setCurrentCurrencyToUSD: () => dispatch(setCurrentCurrency('usd')),
-    setMouseUserState: (isMouseUser) =>
-      dispatch(setMouseUserState(isMouseUser)),
     setLastActiveTime: () => dispatch(setLastActiveTime()),
     pageChanged: (path) => dispatch(pageChanged(path)),
     prepareToLeaveSwaps: () => dispatch(prepareToLeaveSwaps()),
@@ -98,11 +134,17 @@ function mapDispatchToProps(dispatch) {
     hideImportNftsModal: () => dispatch(hideImportNftsModal()),
     hideIpfsModal: () => dispatch(hideIpfsModal()),
     hideImportTokensModal: () => dispatch(hideImportTokensModal()),
-    hideSelectActionModal: () => dispatch(hideSelectActionModal()),
-    ///: BEGIN:ONLY_INCLUDE_IN(keyring-snaps)
+    hideDeprecatedNetworkModal: () => dispatch(hideDeprecatedNetworkModal()),
+    addPermittedAccount: (activeTabOrigin, address) =>
+      dispatch(addPermittedAccount(activeTabOrigin, address)),
+    clearSwitchedNetworkDetails: () => dispatch(clearSwitchedNetworkDetails()),
+    automaticallySwitchNetwork: (networkId, selectedTabOrigin) =>
+      dispatch(automaticallySwitchNetwork(networkId, selectedTabOrigin)),
+    clearEditedNetwork: () => dispatch(setEditedNetwork()),
+    ///: BEGIN:ONLY_INCLUDE_IF(keyring-snaps)
     hideShowKeyringSnapRemovalResultModal: () =>
       dispatch(hideKeyringRemovalResultModal()),
-    ///: END:ONLY_INCLUDE_IN
+    ///: END:ONLY_INCLUDE_IF
   };
 }
 
